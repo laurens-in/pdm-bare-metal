@@ -1,12 +1,12 @@
 #![no_main]
 #![no_std]
 
-use core::ptr;
+use core::{ptr, sync::atomic};
 
 use cortex_m::asm::wfe;
 use nrf52840_hal::{
     gpio::{p0, p1, Floating, Input, Level, Output, Pin, PushPull},
-    pac,
+    pac::{self, pdm::SAMPLE},
 };
 use pdm_bare_metal as _; // global logger + panicking-behavior + memory layout
 
@@ -17,15 +17,13 @@ const BUFFER_LENGTH: usize = (TIMER_FREQUENCY / SAMPLE_RATE) as usize;
 #[cortex_m_rt::entry]
 fn main() -> ! {
     let dp = pac::Peripherals::take().unwrap();
-    // let p = 0x20000000 as *const u32;
 
     let port0 = p0::Parts::new(dp.P0);
     let port1 = p1::Parts::new(dp.P1);
 
-    let mut data: [u16; BUFFER_LENGTH] = [0; BUFFER_LENGTH];
-    let data2: [u16; BUFFER_LENGTH] = [0; BUFFER_LENGTH];
-    let mut counter = 0;
     static DUMMY: [u16; 1] = [0; 1];
+
+    // defmt::println!("initialized data: {}", data);
 
     // intialize PDM
     let _clk: Pin<Output<PushPull>> = port1.p1_09.into_push_pull_output(Level::Low).degrade();
@@ -64,17 +62,19 @@ fn main() -> ! {
     //     .ptr
     //     .write(|w| unsafe { w.sampleptr().bits(data.as_ptr() as u32)});
 
-    pdm.sample
-        .ptr
-        .write(|w| unsafe { w.sampleptr().bits(data.as_ptr() as u32) });
+    // pdm.sample
+    //     .ptr
+    //     .write(|w| unsafe { w.sampleptr().bits(data.as_ptr() as u32) });
 
-    pdm.sample
-        .maxcnt
-        .write(|w| unsafe { w.buffsize().bits((BUFFER_LENGTH).try_into().unwrap()) });
+    // pdm.sample
+    //     .maxcnt
+    //     .write(|w| unsafe { w.buffsize().bits((BUFFER_LENGTH).try_into().unwrap()) });
 
     pdm.tasks_start.write(|w| w.tasks_start().bit(true));
 
     loop {
+        let data: [u16; BUFFER_LENGTH] = [0; BUFFER_LENGTH];
+
         pdm.sample
             .ptr
             .write(|w| unsafe { w.sampleptr().bits(data.as_ptr() as u32) });
@@ -83,47 +83,37 @@ fn main() -> ! {
             .maxcnt
             .write(|w| unsafe { w.buffsize().bits((BUFFER_LENGTH).try_into().unwrap()) });
 
-        defmt::println!("started bit: {}", pdm.events_started.read().bits());
+        // defmt::println!("started bit: {}", pdm.events_started.read().bits());
 
-        defmt::println!("data at: {}", data.as_ptr());
+        // defmt::println!("data at: {}", data.as_ptr());
 
         // while pdm.events_started.read().bits() == 0 {
-        //     // wfe();
+        //     defmt::trace!("waiting for start...")
         // }
 
-        cortex_m::asm::delay(50_000);
+        // cortex_m::asm::delay(50_000);
 
         pdm.events_end.write(|w| w.events_end().bit(false));
+        defmt::trace! {"clear end bit"};
 
-        pdm.sample
-            .ptr
-            .write(|w| unsafe { w.sampleptr().bits(DUMMY.as_ptr() as u32) });
+        // cortex_m::asm::delay(50_000);
 
-        pdm.sample.maxcnt.write(|w| unsafe { w.buffsize().bits(1) });
+        // pdm.sample
+        //     .ptr
+        //     .write(|w| unsafe { w.sampleptr().bits(DUMMY.as_ptr() as u32) });
 
-        defmt::println!("successfully started heh");
-        // pdm.events_started.write(|w| w.events_started().clear_bit());
+        // pdm.sample.maxcnt.write(|w| unsafe { w.buffsize().bits(1) });
 
         while pdm.events_end.read().bits() == 0 {
-            // wfe();
+            // defmt::trace!("waiting for end");
+            // cortex_m::asm::delay(50_000);
         }
 
-        defmt::println!("ended!");
+        // defmt::trace!("end received!");
 
-        defmt::println!("data: {}", data);
-        // pdm.events_started.write(|w| w.events_started().clear_bit());
-
-        zero_me(&mut data);
-
-        cortex_m::asm::delay(50_000_000);
+        defmt::println!("data {}: {}", data.as_ptr(), data);
+        defmt::println!("result {}", pdm.sample.ptr.read().bits())
     }
 
     // pdm_bare_metal::exit()
-}
-
-fn zero_me(array: &mut [u16]) {
-    unsafe {
-        let p = array.as_mut_ptr();
-        ptr::write_bytes(p, 0, array.len());
-    }
 }
