@@ -3,4 +3,4 @@ chip = "nRF52840_xxAA"
 
 [default.gdb]
 # Whether or not a GDB server should be opened after flashing.
-enabled = false
+enabled = true
